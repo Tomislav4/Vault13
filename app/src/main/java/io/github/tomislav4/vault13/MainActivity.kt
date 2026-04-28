@@ -62,10 +62,10 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainContent() {
-    var isAuthenticated by remember { mutableStateOf(!SecurityManager.isLocked()) }
+    val isAuthenticated = remember { mutableStateOf(!SecurityManager.isLocked()) }
 
-    if (!isAuthenticated) {
-        AuthScreen(onAuthenticated = { isAuthenticated = true })
+    if (!isAuthenticated.value) {
+        AuthScreen(onAuthenticated = { isAuthenticated.value = true })
     } else {
         NoteScreen()
     }
@@ -213,9 +213,9 @@ fun AuthScreen(onAuthenticated: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun NoteScreen(viewModel: NoteViewModel = viewModel()) {
-    var showAddDialog by remember { mutableStateOf(false) }
-    var editingNote by remember { mutableStateOf<Note?>(null) }
-    var noteText by remember { mutableStateOf("") }
+    val showAddDialog = remember { mutableStateOf(false) }
+    val editingNote = remember { mutableStateOf<Note?>(null) }
+    val noteText = remember { mutableStateOf("") }
 
     // Reload notes once authenticated since they couldn't be decrypted before
     LaunchedEffect(Unit) {
@@ -240,12 +240,12 @@ fun NoteScreen(viewModel: NoteViewModel = viewModel()) {
             )
         },
         floatingActionButton = {
-            if (!viewModel.isSelectionMode.value && !showAddDialog) {
+            if (!viewModel.isSelectionMode.value && !showAddDialog.value) {
                 FloatingActionButton(
                     onClick = { 
-                        noteText = ""
-                        editingNote = null
-                        showAddDialog = true 
+                        noteText.value = ""
+                        editingNote.value = null
+                        showAddDialog.value = true 
                     },
                     containerColor = MatrixGreen,
                     contentColor = MatrixBlack
@@ -269,9 +269,9 @@ fun NoteScreen(viewModel: NoteViewModel = viewModel()) {
                                 if (viewModel.isSelectionMode.value) {
                                     viewModel.toggleSelection(note.id)
                                 } else {
-                                    editingNote = note
-                                    noteText = note.content
-                                    showAddDialog = true
+                                    editingNote.value = note
+                                    noteText.value = note.content
+                                    showAddDialog.value = true
                                 }
                             }
                         )
@@ -279,7 +279,7 @@ fun NoteScreen(viewModel: NoteViewModel = viewModel()) {
                 }
             }
 
-            if (showAddDialog) {
+            if (showAddDialog.value) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MatrixBlack.copy(alpha = 0.9f)
@@ -290,7 +290,7 @@ fun NoteScreen(viewModel: NoteViewModel = viewModel()) {
                             .padding(16.dp)
                     ) {
                         Text(
-                            if (editingNote == null) "> NEW_ENTRY" else "> EDIT_ENTRY",
+                            if (editingNote.value == null) "> NEW_ENTRY" else "> EDIT_ENTRY",
                             color = MatrixGreen,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 18.sp
@@ -306,7 +306,7 @@ fun NoteScreen(viewModel: NoteViewModel = viewModel()) {
                                 .padding(8.dp)
                         ) {
                             Text(
-                                text = noteText + "_",
+                                text = noteText.value + "_",
                                 color = MatrixGreen,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 16.sp
@@ -316,17 +316,17 @@ fun NoteScreen(viewModel: NoteViewModel = viewModel()) {
                         Spacer(modifier = Modifier.height(16.dp))
 
                         MatrixKeyboard(
-                            onKeyClick = { noteText += it },
-                            onDelete = { if (noteText.isNotEmpty()) noteText = noteText.dropLast(1) },
-                            onSpace = { noteText += " " },
+                            onKeyClick = { noteText.value += it },
+                            onDelete = { if (noteText.value.isNotEmpty()) noteText.value = noteText.value.dropLast(1) },
+                            onSpace = { noteText.value += " " },
                             onEnter = {
-                                if (editingNote == null) {
-                                    viewModel.addNote(noteText)
+                                if (editingNote.value == null) {
+                                    viewModel.addNote(noteText.value)
                                 } else {
-                                    viewModel.updateNote(editingNote!!.id, noteText)
+                                    viewModel.updateNote(editingNote.value!!.id, noteText.value)
                                 }
-                                showAddDialog = false
-                                editingNote = null
+                                editingNote.value = null
+                                showAddDialog.value = false
                             },
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -336,20 +336,20 @@ fun NoteScreen(viewModel: NoteViewModel = viewModel()) {
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             TextButton(onClick = { 
-                                showAddDialog = false
-                                editingNote = null
+                                editingNote.value = null
+                                showAddDialog.value = false
                             }) {
                                 Text("[ ABORT ]", color = MatrixGreen, fontFamily = FontFamily.Monospace)
                             }
                             
                             TextButton(onClick = {
-                                if (editingNote == null) {
-                                    viewModel.addNote(noteText)
+                                if (editingNote.value == null) {
+                                    viewModel.addNote(noteText.value)
                                 } else {
-                                    viewModel.updateNote(editingNote!!.id, noteText)
+                                    viewModel.updateNote(editingNote.value!!.id, noteText.value)
                                 }
-                                showAddDialog = false
-                                editingNote = null
+                                editingNote.value = null
+                                showAddDialog.value = false
                             }) {
                                 Text("[ COMMIT ]", color = MatrixGreen, fontFamily = FontFamily.Monospace)
                             }
