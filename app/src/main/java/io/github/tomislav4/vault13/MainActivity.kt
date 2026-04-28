@@ -14,11 +14,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -36,14 +41,171 @@ class MainActivity : ComponentActivity() {
             WindowManager.LayoutParams.FLAG_SECURE
         )
         
-        // 3. Cryptographic Warden: Initialize with Context for StrongBox check
+        // 3. Cryptographic Warden: Initialize hardware keys
         SecurityManager.init(this)
         
         enableEdgeToEdge()
         setContent {
             Vault13Theme {
-                NoteScreen()
+                MainContent()
             }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Requirement: Prevent running in background / Ask for password every time
+        SecurityManager.clearSession()
+        finishAndRemoveTask() // Kill the activity so it must restart and re-auth
+    }
+}
+
+@Composable
+fun MainContent() {
+    var isAuthenticated by remember { mutableStateOf(!SecurityManager.isLocked()) }
+
+    if (!isAuthenticated) {
+        AuthScreen(onAuthenticated = { isAuthenticated = true })
+    } else {
+        NoteScreen()
+    }
+}
+
+@Composable
+fun AuthScreen(onAuthenticated: () -> Unit) {
+    val context = LocalContext.current
+    val isFirstTime = remember { !SecurityManager.isPasswordSet(context) }
+    
+    var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var isConfirming by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MatrixBlack
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                if (isFirstTime) Icons.Default.Warning else Icons.Default.Lock,
+                contentDescription = null,
+                tint = if (isFirstTime && !isConfirming) Color.Yellow else MatrixGreen,
+                modifier = Modifier.size(64.dp)
+            )
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            val titleText = when {
+                isFirstTime && !isConfirming -> "INITIALIZE_VAULT_PROTOCOL"
+                isFirstTime && isConfirming -> "CONFIRM_SECURITY_PHRASE"
+                else -> "IDENTITY_VERIFICATION_REQUIRED"
+            }
+
+            Text(
+                titleText,
+                color = MatrixGreen,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 14.sp
+            )
+            
+            if (isFirstTime && !isConfirming) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "WARNING: NO_RECOVERY_MECHANISM_EXISTS.\nIF_PHRASE_IS_LOST, ALL_DATA_WILL_BE_PERMANENTLY_PURGED.",
+                    color = Color.Red,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 14.sp
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            val currentInput = if (isConfirming) confirmPassword else password
+
+            // Password Display (Masked)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .border(1.dp, if (error.isNotEmpty()) Color.Red else MatrixGreen)
+                    .padding(8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "*".repeat(currentInput.length) + if (currentInput.length < 16) "_" else "",
+                    color = MatrixGreen,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 20.sp
+                )
+            }
+            
+            if (error.isNotEmpty()) {
+                Text(
+                    error,
+                    color = Color.Red,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            MatrixKeyboard(
+                onKeyClick = { 
+                    if (!isConfirming) {
+                        if (password.length < 16) password += it
+                    } else {
+                        if (confirmPassword.length < 16) confirmPassword += it
+                    }
+                    error = "" 
+                },
+                onDelete = { 
+                    if (!isConfirming) {
+                        if (password.isNotEmpty()) password = password.dropLast(1)
+                    } else {
+                        if (confirmPassword.isNotEmpty()) confirmPassword = confirmPassword.dropLast(1)
+                    }
+                },
+                onSpace = { /* No space in pwd */ },
+                onEnter = {
+                    if (isFirstTime) {
+                        if (!isConfirming) {
+                            if (password.length < 4) {
+                                error = "PHRASE_TOO_SHORT (MIN 4)"
+                            } else {
+                                isConfirming = true
+                            }
+                        } else {
+                            if (password == confirmPassword) {
+                                SecurityManager.setPassword(password, context)
+                                onAuthenticated()
+                            } else {
+                                error = "MISMATCH_DETECTED"
+                                confirmPassword = ""
+                                // Optional: reset first password too if you want to be strict
+                                // password = ""; isConfirming = false
+                            }
+                        }
+                    } else {
+                        if (SecurityManager.verifyPassword(password, context)) {
+                            onAuthenticated()
+                        } else {
+                            error = "ACCESS_DENIED"
+                            password = ""
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }
@@ -54,6 +216,11 @@ fun NoteScreen(viewModel: NoteViewModel = viewModel()) {
     var showAddDialog by remember { mutableStateOf(false) }
     var editingNote by remember { mutableStateOf<Note?>(null) }
     var noteText by remember { mutableStateOf("") }
+
+    // Reload notes once authenticated since they couldn't be decrypted before
+    LaunchedEffect(Unit) {
+        viewModel.refreshNotes()
+    }
 
     Scaffold(
         topBar = {
@@ -113,7 +280,6 @@ fun NoteScreen(viewModel: NoteViewModel = viewModel()) {
             }
 
             if (showAddDialog) {
-                // 1. Input Isolation Agent: Render overlay to bypass standard UI logging
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MatrixBlack.copy(alpha = 0.9f)
@@ -132,7 +298,6 @@ fun NoteScreen(viewModel: NoteViewModel = viewModel()) {
                         
                         Spacer(modifier = Modifier.height(8.dp))
                         
-                        // Terminal Display Area
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -150,7 +315,6 @@ fun NoteScreen(viewModel: NoteViewModel = viewModel()) {
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // 1. Input Isolation Agent: Custom Matrix Keyboard (No IME)
                         MatrixKeyboard(
                             onKeyClick = { noteText += it },
                             onDelete = { if (noteText.isNotEmpty()) noteText = noteText.dropLast(1) },

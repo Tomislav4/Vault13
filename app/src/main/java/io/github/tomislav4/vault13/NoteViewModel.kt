@@ -15,12 +15,15 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     val isSelectionMode = mutableStateOf(false)
 
     init {
-        loadNotes()
+        refreshNotes()
     }
 
-    private fun loadNotes() {
+    fun refreshNotes() {
         _notes.clear()
-        _notes.addAll(repository.loadNotes().sortedByDescending { it.timestamp })
+        val loaded = repository.loadNotes()
+        if (loaded.isNotEmpty()) {
+            _notes.addAll(loaded.sortedByDescending { it.timestamp })
+        }
     }
 
     fun addNote(content: String) {
